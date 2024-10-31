@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Recognition</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Infant&family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <style>
+           @font-face {
+        font-family: 'DungGeunMo';
+        src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/DungGeunMo.woff') format('woff');
+        font-weight: normal;
+        font-style: normal;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: black; /* 배경색 추가 */
+        }
+        #video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1); /* 거울 모드 */
+            z-index: -1;
+        }
+        #clickToStart {
+            position: absolute;
+            color: white;
+            font-size: 24px;
+            z-index: 10;
+            pointer-events: none; /* 클릭 이벤트를 무시하여 클릭할 수 없도록 설정 */
+        }
+        #waveAnimation {
+            display: flex;
+            gap: 5px;
+            position: fixed;
+            bottom: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: none; /* 처음에는 숨김 */
+        }
+        #waveAnimation div {
+            width: 8px;
+            height: 24px;
+            background-color: #ffffff;
+            animation: wave 1s infinite ease-in-out;
+        }
+        #waveAnimation div:nth-child(2) { animation-delay: 0.1s; }
+        #waveAnimation div:nth-child(3) { animation-delay: 0.2s; }
+        #waveAnimation div:nth-child(4) { animation-delay: 0.3s; }
+        #waveAnimation div:nth-child(5) { animation-delay: 0.4s; }
+        @keyframes wave {
+            0%, 100% { transform: scaleY(0.5); }
+            50% { transform: scaleY(1); }
+        }
+        .textContainer {
+            position: fixed;
+            top: 5%; /* 텍스트 박스 위치 조정 */
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-wrap: wrap; /* 박스가 줄 바꿈 되도록 설정 */
+            width: 90vw; /* 전체 너비 */
+            height: 90vh; /* 전체 높이 */
+            z-index: 10; /* 텍스트가 비디오 위에 표시되도록 */
+        }
+        .textBox {
+            width: calc(90vw / 40); /* 각 박스의 너비 (30개 박스) */
+            height: calc(90vh / 30); /* 각 박스의 높이 (40개 박스) */
+            background-color: transparent; /* 배경색을 투명으로 설정 */
+            color: #00FF84; /* 기본 텍스트 색상 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 22px;
+            border-radius: 10px; /* 둥근 모서리 */
+            overflow: hidden; /* 텍스트가 박스를 넘지 않도록 설정 */
+            position: relative;
+            font-family: "Noto Serif";
+            font-weight: 300;
+        }
+
+        #codeNamePrompt {
+            position: fixed;
+            bottom: 15%; /* 위쪽 위치 조정 */
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ffffff; /* 텍스트 색상 */
+            font-size: 32px; /* 텍스트 크기 */
+            font-family: "Noto Sans";
+            z-index: 15; /* 비디오와 애니메이션 위에 표시 */
+            display: none;
+        }
+        .userText {
+            color: rgb(255, 255, 255); /* 사용자 텍스트 색상 설정 */
+            font-weight: 600;
+        }
+        .acceptedText {
+            position: fixed;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff0000;
+            font-size: 300px; /* 크기 300px */
+            z-index: 20; /* 다른 요소들 위에 표시 */
+            opacity: 0; /* 처음에는 투명하게 설정 */
+            font-family: 'DungGeunMo';
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay muted></video>
+    <div id="clickToStart">Click to Start</div>
+    <div id="codeNamePrompt">Say your code name</div> 
+    <div id="waveAnimation">
+        <div></div>
+        <div></div>
+        <div></div>
+        <div></div>
+        <div></div>
+    </div>
+    <div class="acceptedText" id="acceptedText">Accepted</div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const video = document.getElementById('video');
+            const clickToStart = document.getElementById('clickToStart');
+            const waveAnimation = document.getElementById('waveAnimation');
+            const codeNamePrompt = document.getElementById('codeNamePrompt');
+            const acceptedText = document.getElementById('acceptedText'); // "Accepted" 텍스트
+            let isVoiceRecognitionStarted = false;  // 중복 실행 방지 플래그
+            let isVoiceLoaded = false;  // 음성 로드 상태 플래그
+            let hasGuidancePlayed = false;  // 안내 음성이 이미 출력되었는지 확인하는 플래그
+
+            // 비디오 스트림 연결
+            async function startVideoStream() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    video.srcObject = stream; // 비디오 스트림 연결
+                } catch (err) {
+                    console.error("Error accessing webcam.", err);
+                }
+            }
+
+            // 비디오 스트림 시작
+            startVideoStream(); // 페이지 로드 시 웹캠 자동 실행
+
+            // 마우스 이동 시 Click to Start 텍스트 위치 업데이트
+            document.addEventListener('mousemove', (event) => {
+                clickToStart.style.left = `${event.pageX}px`;
+                clickToStart.style.top = `${event.pageY}px`;
+            });
+
+               // 사용자가 클릭했을 때 안내 음성 출력 및 음성 인식 시작
+            document.addEventListener('click', () => {
+            if (!hasGuidancePlayed) {
+                hasGuidancePlayed = true;  // 안내 음성이 출력되었음을 표시
+                clickToStart.style.display = 'none';  // Click to Start 텍스트 숨기기
+                initiateVoiceGuidance(); // 안내 음성 출력
+                codeNamePrompt.style.display = 'block'; 
+            }
+             });
+
+            // 음성을 로드하는 함수
+            function loadVoice() {
+                return new Promise((resolve) => {
+                    const checkVoices = () => {
+                        const voices = window.speechSynthesis.getVoices();
+                        if (voices.length > 0) {
+                            resolve();
+                        } else {
+                            setTimeout(checkVoices, 100); // 100ms 간격으로 다시 확인
+                        }
+                    };
+                    checkVoices();
+                });
+            }
+
+           
+            // 안내 음성을 영어 발음으로 출력
+            async function initiateVoiceGuidance() {
+                await loadVoice(); // 음성이 로드될 때까지 대기
+                isVoiceLoaded = true; // 음성이 로드됨을 표시
+
+                const utterance = new SpeechSynthesisUtterance("Say your code name");
+                const voices = window.speechSynthesis.getVoices();
+                const selectedVoice = voices.find(voice => voice.lang === 'en-US' && voice.name.includes('Google US English'));
+
+                if (selectedVoice) {
+                    utterance.voice = selectedVoice;
+                }
+
+                window.speechSynthesis.speak(utterance);
+
+                utterance.onend = () => {
+                    waveAnimation.style.display = 'flex'; // 음성 인식 중에 파형 애니메이션 표시
+                    
+                    startVoiceRecognition(); // 음성 인식 시작
+                };
+            }
+
+            // 음성 인식 설정 및 시작
+            function startVoiceRecognition() {
+                if (isVoiceRecognitionStarted) return;  // 중복 방지
+                isVoiceRecognitionStarted = true;  // 음성 인식 시작 상태 플래그 설정
+                
+                
+
+
+                const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                recognition.interimResults = true;
+
+                recognition.onresult = (event) => {
+                    const transcript = Array.from(event.results)
+                        .map(result => result[0])
+                        .map(result => result.transcript)
+                        .join('');
+
+                    if (event.results[0].isFinal) {
+                        displayText(transcript);
+                    }
+                };
+
+                recognition.onend = () => {
+                    waveAnimation.style.display = 'none';
+                    codeNamePrompt.style.display = 'none'; // 음성 인식 종료 시 파형 애니메이션 숨기기
+                    isVoiceRecognitionStarted = false;  // 플래그 초기화
+                };
+
+                recognition.start();  // 음성 인식 시작
+            }
+
+            // 랜덤 텍스트 박스를 생성하여 애니메이션 표시
+            function displayText(userText) {
+                const textContainer = document.createElement('div');
+                textContainer.className = 'textContainer';
+                document.body.appendChild(textContainer);
+
+                const numberOfBoxes = 30 * 40; // 총 박스 개수 (30 x 40)
+                const boxes = [];
+
+                // 박스 생성
+                for (let i = 0; i < numberOfBoxes; i++) {
+                    const textBox = document.createElement('div');
+                    textBox.className = 'textBox';
+                    textBox.textContent = getRandomText(); // 초기 랜덤 텍스트
+                    textContainer.appendChild(textBox);
+                    boxes.push(textBox);
+                }
+
+                // 3초 동안 랜덤 텍스트 애니메이션
+                let animationDuration = 3000; // 3초
+                let interval = 50; // 0.05초
+                let elapsed = 0;
+
+                const intervalId = setInterval(() => {
+                    // 랜덤 텍스트로 변경
+                    boxes.forEach(box => {
+                        box.textContent = getRandomText();
+                    });
+                    elapsed += interval;
+
+                    if (elapsed >= animationDuration) {
+                        clearInterval(intervalId);
+                    
+                        // 사용자 텍스트를 애니메이션으로 표시
+                        showUserText(userText, boxes);
+                    }
+                }, interval);
+            }
+
+            // 사용자 텍스트 표시
+            function showUserText(userText, boxes) {
+                // 사용자 텍스트를 900번째 박스부터 표시
+                const startIndex = 899; // 900번째 박스의 인덱스는 899
+                                const chars = Array.from(userText);
+                                chars.forEach((char, index) => {
+                                    if (startIndex + index < boxes.length) {
+                                        boxes[startIndex + index].textContent = char; // 900번째 박스부터 텍스트 표시
+                                        boxes[startIndex + index].classList.add('userText'); // 사용자 텍스트 스타일 적용
+                                    }
+            
+                });
+                // userText를 localStorage에 저장
+                localStorage.setItem("userText", userText);
+
+                let blinkCount = 0; // 깜빡이는 횟수
+                const maxBlinks = 6; // 최대 깜빡이는 횟수
+
+                const blinkInterval = setInterval(() => {
+                    acceptedText.style.opacity = (acceptedText.style.opacity == 0 ? 1 : 0); // 깜빡임 효과
+
+                    if (++blinkCount === maxBlinks) {
+                        clearInterval(blinkInterval); // 깜빡임 종료
+                        acceptedText.style.opacity = 1; // 마지막으로 보이게 설정
+                        setTimeout(() => {
+                                window.location.href = "page2.html"; // 두 번째 페이지의 파일 이름으로 변경
+                            }, 500); // 0.5초 후에 이동
+                        
+                        // 음성 안내
+                        const finalUtterance = new SpeechSynthesisUtterance(`Hello, ${userText}. Welcome to our service! Our service offers an automatic conversion feature to protect your information from robots.`);
+                        finalUtterance.voice = window.speechSynthesis.getVoices().find(voice => voice.lang === 'en-US' && voice.name.includes('Google US English'));
+                        window.speechSynthesis.speak(finalUtterance);
+                    }
+                }, 500); // 0.5초 간격으로 깜빡임
+
+                
+            
+            }
+
+
+            // 랜덤 텍스트 생성
+            function getRandomText() {
+                const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghihjklmnopqrstuvwxyz~!@#$%^&*1234567890';
+                return characters.charAt(Math.floor(Math.random() * characters.length));
+            }
+        });
+    </script>
+</body>
+</html>
